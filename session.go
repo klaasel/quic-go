@@ -222,6 +222,7 @@ var newSession = func(
 	)
 	s.connIDGenerator = newConnIDGenerator(
 		srcConnID,
+		clientDestConnID,
 		func(connID protocol.ConnectionID) [16]byte { return runner.Add(connID, s) },
 		runner.Remove,
 		runner.Retire,
@@ -233,6 +234,7 @@ var newSession = func(
 	initialStream := newCryptoStream()
 	handshakeStream := newCryptoStream()
 	oneRTTStream := newPostHandshakeCryptoStream(s.framer)
+	runner.Add(clientDestConnID, s)
 	token := runner.Add(srcConnID, s)
 	params := &handshake.TransportParameters{
 		InitialMaxStreamDataBidiLocal:  protocol.InitialMaxStreamData,
@@ -257,10 +259,13 @@ var newSession = func(
 		conn.RemoteAddr(),
 		params,
 		&handshakeRunner{
-			onReceivedParams:    s.processTransportParameters,
-			onError:             s.closeLocal,
-			dropKeys:            s.dropEncryptionLevel,
-			onHandshakeComplete: func() { close(s.handshakeCompleteChan) },
+			onReceivedParams: s.processTransportParameters,
+			onError:          s.closeLocal,
+			dropKeys:         s.dropEncryptionLevel,
+			onHandshakeComplete: func() {
+				runner.Retire(clientDestConnID)
+				close(s.handshakeCompleteChan)
+			},
 		},
 		tlsConf,
 		s.rttStats,
@@ -319,6 +324,7 @@ var newClientSession = func(
 	)
 	s.connIDGenerator = newConnIDGenerator(
 		srcConnID,
+		nil,
 		func(connID protocol.ConnectionID) [16]byte { return runner.Add(connID, s) },
 		runner.Remove,
 		runner.Retire,
@@ -590,6 +596,7 @@ func (s *session) handleHandshakeComplete() {
 	s.handshakeCompleteChan = nil // prevent this case from ever being selected again
 	s.handshakeCtxCancel()
 
+	s.connIDGenerator.SetHandshakeComplete()
 	s.sentPacketHandler.SetHandshakeComplete()
 	// The client completes the handshake first (after sending the CFIN).
 	// We need to make sure it learns about the server completing the handshake,
