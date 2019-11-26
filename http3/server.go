@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -364,10 +365,17 @@ func ListenAndServe(addr, certFile, keyFile string, handler http.Handler) error 
 	if err != nil {
 		return err
 	}
+
+	w, err1 := os.OpenFile("quic-go-tls-secrets.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err1 != nil {
+		fmt.Println(err1)
+		return err
+	}
 	// We currently only use the cert-related stuff from tls.Config,
 	// so we don't need to make a full copy.
 	config := &tls.Config{
 		Certificates: certs,
+		KeyLogWriter: w,
 	}
 
 	// Open the listeners
